@@ -3,9 +3,10 @@ pandas
 numpy
 seaborn
 matplotlib
-scikit-learn==1.7.1
+scikit-learn
 joblib
 imbalanced-learn
 xgboost
+
 
 
