@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 import numpy as np
+import os
 
 # 1. Page Configuration
 st.set_page_config(
@@ -10,10 +11,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 2. Load the trained model
+# 2. Load the trained model safely
 @st.cache_resource
 def load_model():
-    return joblib.load('rf_model.pkl')
+    try:
+        model_path = os.path.join(os.path.dirname(__file__), "rf_model.pkl")
+        return joblib.load(model_path)
+    except Exception as e:
+        st.error(f"模型加载失败: {e}")
+        return None
 
 model = load_model()
 
@@ -27,7 +33,6 @@ st.sidebar.info("WQD7001 Group 9 Project\n")
 if app_mode == "Home":
     st.title("Cardiovascular Disease Risk Assessment")
     
-    # 1. Introduction
     st.markdown("""
     ### 👋 Welcome
     This application utilizes a **Random Forest** machine learning model to predict the **10-year risk** of developing Coronary Heart Disease (CHD). 
@@ -40,7 +45,6 @@ if app_mode == "Home":
     
     st.divider()
     
-    # 2. Standards with Corrected Links
     st.markdown("### 🏥 Medical Standards Reference")
     st.markdown("Your health metrics are compared against the following international guidelines:")
     
@@ -79,38 +83,36 @@ if app_mode == "Home":
 elif app_mode == "Prediction System":
     st.title("Risk Prediction Tool")
     
-    # --- Sidebar Inputs ---
     st.sidebar.header("Patient Data Input")
 
     def user_input_features():
-        # Group 1: Demographics
+        # Demographics
         st.sidebar.subheader("1. Demographics")
         gender = st.sidebar.radio("Gender", ('Male', 'Female'))
         age = st.sidebar.slider('Age', 30, 80, 50)
-        education = st.sidebar.selectbox("Education Level", (1, 2, 3, 4), help="1: Some High School, 4: College/Degree")
+        education = st.sidebar.selectbox("Education Level", (1, 2, 3, 4))
 
-        # Group 2: Habits
+        # Habits
         st.sidebar.subheader("2. Behavioral Habits")
         currentSmoker = st.sidebar.radio("Current Smoker?", ('No', 'Yes'))
-        
         cigsPerDay = 0.0
         if currentSmoker == 'Yes':
             cigsPerDay = st.sidebar.number_input('Cigarettes Per Day', min_value=1, max_value=70, value=10, step=1)
-        # Group 3: Medical History
+
+        # Medical History
         st.sidebar.subheader("3. Medical History")
         bp_meds = st.sidebar.checkbox("On BP Medication?")
         prevalentStroke = st.sidebar.checkbox("History of Stroke?")
         prevalentHyp = st.sidebar.checkbox("Hypertension (High BP)?")
         diabetes = st.sidebar.checkbox("Diabetes?")
 
-        # Group 4: Measurements
+        # Measurements
         st.sidebar.subheader("4. Clinical Measurements")
-        sysBP = st.sidebar.slider('Systolic BP (sysBP)', 80, 250, 120, help="Normal < 120 mmHg")
-        # Clarified the help text here
-        diaBP = st.sidebar.slider('Diastolic BP (diaBP)', 40, 150, 80, help="Normal < 80 mmHg (80+ is elevated)")
+        sysBP = st.sidebar.slider('Systolic BP (sysBP)', 80, 250, 120)
+        diaBP = st.sidebar.slider('Diastolic BP (diaBP)', 40, 150, 80)
         bmi = st.sidebar.number_input('BMI', 10.0, 50.0, 25.0, step=0.1)
         heartRate = st.sidebar.slider('Heart Rate', 40, 150, 75)
-        glucose = st.sidebar.slider('Glucose Level', 40, 400, 85, help="Normal < 100 mg/dL")
+        glucose = st.sidebar.slider('Glucose Level', 40, 400, 85)
         totChol = st.sidebar.slider('Total Cholesterol', 100, 600, 200)
 
         data = {
@@ -139,58 +141,32 @@ elif app_mode == "Prediction System":
 
     st.divider()
 
-    # --- Prediction Execution ---
     if st.button('Run Analysis', type="primary", use_container_width=True):
-        
-        with st.spinner('Analyzing...'):
-            prediction_proba = model.predict_proba(input_df)
-            risk_prob = prediction_proba[0][1] 
-        
-        # --- Logic to determine Label ---
-            if risk_prob > 0.5:
-                risk_label = "High Risk"
-            else:
-                risk_label = "Low Risk"
-
-        # --- 1. Risk Assessment Results ---
-        st.subheader("1. Risk Assessment Results")
-        st.metric(
-            # label="Prediction Outcome", 
-            label = '',
-            value=risk_label
-        )
-        
-        st.caption(f"The calculated probability is **{risk_prob:.1%}** (Threshold: 50%).")
-        
-        if risk_prob > 0.5:
-            st.error(f"**Analysis**: The model identifies this profile as **High Risk** because the probability ({risk_prob:.1%}) exceeds the safety threshold.")
+        if model is None:
+            st.error("模型未加载，无法进行预测。请检查 rf_model.pkl 是否存在并依赖完整。")
         else:
-            st.success(f"**Analysis**: The model identifies this profile as **Low Risk** because the probability ({risk_prob:.1%}) is within the safe range.")
+            with st.spinner('Analyzing...'):
+                prediction_proba = model.predict_proba(input_df)
+                risk_prob = prediction_proba[0][1] 
+        
+            risk_label = "High Risk" if risk_prob > 0.5 else "Low Risk"
 
-        st.markdown("---")
+            st.subheader("1. Risk Assessment Results")
+            st.metric(label='', value=risk_label)
+            st.caption(f"The calculated probability is **{risk_prob:.1%}** (Threshold: 50%).")
 
-        # --- 2. Vitals Analysis ---
-        st.subheader("2. Vitals Analysis")
-        st.markdown("**Comparison against standard clinical thresholds:**")
-        
-        k1, k2, k3, k4 = st.columns(4)
-        
-        # Values logic
-        u_sys = input_df['sysBP'][0]
-        u_dia = input_df['diaBP'][0]
-        u_glu = input_df['glucose'][0]
-        u_bmi = input_df['BMI'][0]
+            if risk_prob > 0.5:
+                st.error(f"**Analysis**: High Risk ({risk_prob:.1%}) exceeds threshold.")
+            else:
+                st.success(f"**Analysis**: Low Risk ({risk_prob:.1%}) within safe range.")
 
-        # Metrics with Delta
-        # Logic: If delta is 0, it means it's exactly ON the threshold, which usually needs attention (e.g. Dia 80 is Stage 1)
-        # But for simplicity, we show the math difference.
-        
-        k1.metric("Systolic BP", f"{u_sys}", delta=f"{u_sys-120} (Ref: <120)", delta_color="inverse")
-        k2.metric("Diastolic BP", f"{u_dia}", delta=f"{u_dia-80} (Ref: <80)", delta_color="inverse")
-        k3.metric("Glucose", f"{u_glu}", delta=f"{u_glu-100} (Ref: <100)", delta_color="inverse")
-        k4.metric("BMI", f"{u_bmi:.1f}", delta=f"{u_bmi-25:.1f} (Ref: <25.0)", delta_color="inverse")
-        
-        st.caption("Comparison logic based on AHA, ADA, and WHO guidelines mentioned on the Home page.")
+            st.markdown("---")
+            st.subheader("2. Vitals Analysis")
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("Systolic BP", f"{input_df['sysBP'][0]}", delta=f"{input_df['sysBP'][0]-120} (Ref: <120)", delta_color="inverse")
+            k2.metric("Diastolic BP", f"{input_df['diaBP'][0]}", delta=f"{input_df['diaBP'][0]-80} (Ref: <80)", delta_color="inverse")
+            k3.metric("Glucose", f"{input_df['glucose'][0]}", delta=f"{input_df['glucose'][0]-100} (Ref: <100)", delta_color="inverse")
+            k4.metric("BMI", f"{input_df['BMI'][0]:.1f}", delta=f"{input_df['BMI'][0]-25:.1f} (Ref: <25.0)", delta_color="inverse")
 
     st.markdown("---")
     st.caption("END")
